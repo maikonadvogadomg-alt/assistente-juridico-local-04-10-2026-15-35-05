@@ -1,0 +1,51 @@
+# Teste automático: monta e liga o Assistente Jurídico no GitHub (Linux e
+# Windows) e confere se a tela abre e se o banco salva. Verde = funciona.
+# Este teste NÃO gera arquivo para baixar (para isso: "Gerar app para Windows").
+name: Testar o Assistente Juridico
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  testar:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v5
+      - name: Instalar o Node 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Instalar as peças
+        run: npm install --no-audit --no-fund
+      - name: Montar a tela
+        run: npm run build
+      - name: Ligar e testar
+        env:
+          PORT: "5000"
+        run: |
+          npm start > servidor.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://localhost:5000/api/auth/check && break; sleep 1; done
+          echo; echo "--- 1. servidor responde"
+          curl -sf http://localhost:5000/api/auth/check
+          echo; echo "--- 2. a tela abre"
+          curl -sf http://localhost:5000/ | grep -q '<div id="root">'
+          echo ok
+          echo "--- 3. salvar no banco (ementa)"
+          curl -sf -X POST -H 'Content-Type: application/json' -d '{"titulo":"Teste","categoria":"Geral","texto":"Acao de cobranca"}' http://localhost:5000/api/ementas
+          echo; echo "--- 4. ler do banco"
+          curl -sf http://localhost:5000/api/ementas | grep -q "Acao de cobranca"
+          echo ok
+          echo "--- 5. rota que não existe responde JSON (não HTML)"
+          curl -s http://localhost:5000/api/nao-existe | grep -q '"message"'
+          echo ok
+          echo; echo "TUDO CERTO ✅"
+      - name: Mostrar o registro do servidor
+        if: always()
+        run: cat servidor.log || true
